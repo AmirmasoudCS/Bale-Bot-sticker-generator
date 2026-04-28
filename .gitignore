@@ -1,0 +1,4 @@
+secrets.txt
+secrets.py
+__pycache__/
+*.pyc
