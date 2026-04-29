@@ -122,6 +122,42 @@ class StickerProcessor:
         rgba = cv2.merge([b,g,r,mask])
         img_rgba = Image.fromarray(cv2.cvtColor(rgba,cv2.COLOR_BGRA2RGBA))
         return self._create_canvas(img_rgba)
+    def convert_remove_bg_GrabCut(self,image_bytes):
+        if not image_bytes:
+            raise ValueError("Empty image data received.")
+        file_bytes = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
+        if img is None:
+            raise ValueError("Failed to decode image")
+
+        h, w = img.shape[:2]
+
+        # Resize large images for speed
+        scale = 800 / max(h, w) if max(h, w) > 800 else 1
+        img = cv2.resize(img, (int(w * scale), int(h * scale)))
+
+        mask = np.zeros(img.shape[:2], np.uint8)
+
+        bg_model = np.zeros((1, 65), np.float64)
+        fg_model = np.zeros((1, 65), np.float64)
+
+        # Rectangle slightly inside the borders
+        rect = (10, 10, img.shape[1]-20, img.shape[0]-20)
+
+        cv2.grabCut(img, mask, rect, bg_model, fg_model, 5, cv2.GC_INIT_WITH_RECT)
+
+        mask2 = np.where((mask==2)|(mask==0), 0, 255).astype("uint8")
+
+        # Smooth edges
+        mask2 = cv2.GaussianBlur(mask2, (5,5), 0)
+
+        b,g,r = cv2.split(img)
+        rgba = cv2.merge([b,g,r,mask2])
+
+        img_rgba = Image.fromarray(cv2.cvtColor(rgba, cv2.COLOR_BGRA2RGBA))
+
+        return self._create_canvas(img_rgba)
     def convert_gray(self,image_bytes):
         img = Image.open(BytesIO(image_bytes)).convert("L")
         img = img.convert("RGBA")
@@ -162,12 +198,12 @@ class BaleStickerBot:
             keyboard = {
                 "inline_keyboard": [
                     [
-                        {"text": "Normal", "callback_data": "mode_normal"},
-                        {"text": "Remove BG", "callback_data": "mode_remove_bg"},
+                        {"text": "Normal🎨", "callback_data": "mode_normal"},
+                        {"text": "Remove BG✂️", "callback_data": "mode_remove_bg"},
                     ],
                     [
-                        {"text": "Grayscale", "callback_data": "mode_gray"},
-                        {"text": "Cartoon", "callback_data": "mode_cartoon"}
+                        {"text": "Grayscale⚫⚪", "callback_data": "mode_gray"},
+                        {"text": "Cartoon🎭", "callback_data": "mode_cartoon"}
                     ]
                 ]
             }
