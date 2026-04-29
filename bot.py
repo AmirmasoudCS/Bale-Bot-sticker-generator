@@ -80,7 +80,7 @@ class StickerProcessor:
     def _create_canvas(img):
         """Helper to center image on 512x512 transparent canvas."""
         canvas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
-        img.thumbnail((512, 512))
+        img.thumbnail((460, 460))
         x = (512 - img.width) // 2
         y = (512 - img.height) // 2
         canvas.paste(img, (x, y), img if img.mode == 'RGBA' else None)
@@ -98,6 +98,21 @@ class StickerProcessor:
         y_max,x_max=coords.max(axis=0)
         cropped = img_rgba.crop((x_min,y_min,x_max,y_max))
         return cropped
+    def _add_white_outlne(self,img_rgba,thickness=10):
+        arr = np.array(img_rgba)
+        alpha = arr[:,:,3]
+        mask = np.where(alpha > 0,255,0).astype(np.uint8)
+        kernel = np.ones((thickness,thickness),np.uint8)
+        outline = cv2.dilate(mask,kernel,iterations=1)
+        outline = cv2.subtract(outline,mask)
+        white = np.zeros_like(arr)
+        white[:,:,0]=255
+        white[:,:,1]=255
+        white[:,:,2]=255
+        white[:,:,3]=outline
+        outline_img = Image.fromarray(white,"RGBA")
+        outline_img.paste(img_rgba,(0,0),img_rgba)
+        return outline_img
     def convert_normal(self, image_bytes):
         img = Image.open(BytesIO(image_bytes)).convert("RGBA")
         return self._create_canvas(img)
@@ -130,6 +145,7 @@ class StickerProcessor:
         rgba = cv2.merge([b,g,r,mask])
         img_rgba = Image.fromarray(cv2.cvtColor(rgba,cv2.COLOR_BGRA2RGBA))
         img_rgba = self._auto_crop(img_rgba)
+        img_rgba = self._add_white_outline(img_rgba, thickness=8)
         return self._create_canvas(img_rgba)
     def convert_remove_bg_GrabCut(self,image_bytes):
         if not image_bytes:
@@ -152,6 +168,7 @@ class StickerProcessor:
         rgba = cv2.merge([b,g,r,mask2])
         img_rgba = Image.fromarray(cv2.cvtColor(rgba, cv2.COLOR_BGRA2RGBA))
         img_rgba = self._auto_crop(img_rgba)
+        img_rgba = self._add_white_outline(img_rgba, thickness=8)
         return self._create_canvas(img_rgba)
     def convert_gray(self,image_bytes):
         img = Image.open(BytesIO(image_bytes)).convert("L")
