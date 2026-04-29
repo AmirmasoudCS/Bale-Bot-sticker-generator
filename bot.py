@@ -110,7 +110,24 @@ class StickerProcessor:
         rgba = cv2.merge([b,g,r,mask])
         img_rgba = Image.fromarray(cv2.cvtColor(rgba,cv2.COLOR_BGRA2RGBA))
         return self._create_canvas(img_rgba)
+    def convert_gray(self,image_bytes):
+        img = Image.open(BytesIO(image_bytes)).convert("L")
+        img = img.convert("RGBA")
+        return self._create_canvas(img)
+    def convert_cartoon(self, image_bytes):
+        file_bytes = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.medianBlur(gray, 5)
+        edges = cv2.adaptiveThreshold(gray, 255,
+                                    cv2.ADAPTIVE_THRESH_MEAN_C,
+                                    cv2.THRESH_BINARY, 9, 9)
+        color = cv2.bilateralFilter(img, 9, 250, 250)
+        cartoon = cv2.bitwise_and(color, color, mask=edges)
+        rgba = cv2.cvtColor(cartoon, cv2.COLOR_BGR2RGBA)
+        pil_img = Image.fromarray(rgba)
+        return self._create_canvas(pil_img)
 
 class BaleStickerBot:
     """The main Bot class that ties everything together."""
@@ -130,15 +147,41 @@ class BaleStickerBot:
             return
 
         if text.startswith("/mode"):
-            # We will implement button selection here later
-            self.api.send_message(chat_id, "Current modes: /normal, /remove_bg")
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "Normal", "callback_data": "mode_normal"},
+                        {"text": "Remove BG", "callback_data": "mode_remove_bg"},
+                    ],
+                    [
+                        {"text": "Grayscale", "callback_data": "mode_gray"},
+                        {"text": "Cartoon", "callback_data": "mode_cartoon"}
+                    ]
+                ]
+            }
+            self.api.send_message(chat_id, "Choose a sticker mode:", reply_markup=keyboard)
             return
         # 2. Handle Photos
         if "photo" in message:
             self.process_photo_message(chat_id, message["photo"][-1])
         else:
             self.api.send_message(chat_id, "Please send a photo! 📸")
-
+    def handle_callback(self,callback):
+        chat_id = callback["message"]["chat"]["id"]
+        data = callback["data"]
+        if data == "mode_normal":
+            self.user_modes[chat_id] = "normal"
+            self.api.send_message(chat_id,"Mode set to : Normal 🎨")
+        elif data == "mode_remove_bg":
+            self.user_modes[chat_id]="remove_bg"
+            self.api.send_message(chat_id,"Mode set to : Remove Background ✂️")
+        elif data == "mode_gray":
+            self.user_modes[chat_id] = "gray"
+            self.api.send_message(chat_id,"Mode set to : Grayscale ⚫⚪")
+        elif data == "mode_cartoon":
+            self.user_modes[chat_id] = "cartoon"
+            self.api.send_message(chat_id,"Mode set to : Cartoon 🎭")
+    
     def process_photo_message(self, chat_id, photo_data):
         self.api.send_message(chat_id, "⏳ Processing your sticker...")
         
@@ -160,9 +203,12 @@ class BaleStickerBot:
         try:
             if mode == "remove_bg":
                 sticker_bytes = self.processor.convert_remove_bg(image_bytes)
+            elif mode == "gray":
+                sticker_bytes = self.processor.convert_gray(image_bytes)
+            elif mode == "cartoon":
+                sticker_bytes = self.processor.convert_cartoon(image_bytes)
             else:
                 sticker_bytes = self.processor.convert_normal(image_bytes)
-
             self.api.send_sticker(chat_id, sticker_bytes)
         except Exception as e:
             print(f"Error in processing: {e}")
@@ -178,6 +224,8 @@ class BaleStickerBot:
                     self.offset = update["update_id"] + 1
                     if "message" in update:
                         self.handle_message(update["message"])
+                    elif "callback_query" in update:
+                        self.handle_callback(update["callback_query"])
             
             time.sleep(1)
 
