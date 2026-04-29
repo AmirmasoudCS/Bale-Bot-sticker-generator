@@ -2,9 +2,9 @@ import time
 import requests
 from io import BytesIO
 from PIL import Image
-from rembg import remove
+import cv2
 from secrets import BALE_BOT_TOKEN
-
+import numpy as np
 class BaleAPI:
     """Handles all raw API calls to Bale."""
     def __init__(self, token):
@@ -45,13 +45,24 @@ class BaleAPI:
 
     def download_file(self, file_path):
         url = f"{self.file_url}/{file_path}"
+        print("Downloading from URL:",url)
         try:
             resp = self.session.get(url, timeout=40)
-            return resp.content
+            if resp.status_code != 200:
+                print("Download Failed : ", resp.status_code)
+                return None
+            content_type = resp.headers.get("Content-Type","")
+            if not ("image" in content_type or content_type == "application/octet-stream"):
+                print("Unsupported content type:", content_type)
+                return None
+            data = resp.content
+            if len(data) < 1000:
+                print("Downloaded file too small: ", len(data))
+                return None
+            return data
         except Exception as e:
             print(f"⚠️ download_file error: {e}")
             return None
-
     def send_sticker(self, chat_id, sticker_bytes):
         url = f"{self.base_url}/sendSticker"
         files = {"sticker": ("sticker.webp", sticker_bytes, "image/webp")}
@@ -84,10 +95,21 @@ class StickerProcessor:
         return self._create_canvas(img)
 
     def convert_remove_bg(self, image_bytes):
-        img = Image.open(BytesIO(image_bytes))
-        no_bg = remove(img)
-        img = Image.open(BytesIO(no_bg_bytes)).convert("RGBA")
-        return self._create_canvas(img)
+        if not image_bytes:
+            raise ValueError("Empty image data received.")
+        file_bytes = np.frombuffer(image_bytes,dtype=np.uint8)
+        print("Image size : " , len(image_bytes))
+        img = cv2.imdecode(file_bytes,cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("OpenCV failed to decode image. Possibly invalid image data.")
+        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+        _, mask = cv2.threshold(gray,240,255,cv2.THRESH_BINARY_INV)
+        kernel = np.ones((3,3),np.uint8)
+        mask = cv2.morphologyEx(mask,cv2.MORPH_OPEN,kernel)
+        b, g, r = cv2.split(img)
+        rgba = cv2.merge([b,g,r,mask])
+        img_rgba = Image.fromarray(cv2.cvtColor(rgba,cv2.COLOR_BGRA2RGBA))
+        return self._create_canvas(img_rgba)
 
 
 class BaleStickerBot:
@@ -109,9 +131,8 @@ class BaleStickerBot:
 
         if text.startswith("/mode"):
             # We will implement button selection here later
-            self.api.send_message(chat_id, "Current modes: normal, remove_bg")
+            self.api.send_message(chat_id, "Current modes: /normal, /remove_bg")
             return
-
         # 2. Handle Photos
         if "photo" in message:
             self.process_photo_message(chat_id, message["photo"][-1])
@@ -148,7 +169,7 @@ class BaleStickerBot:
             self.api.send_message(chat_id, "❌ Processing failed.")
 
     def run(self):
-        print("🚀 Bot is running (OOP Mode)...")
+        print("🚀 Bot is running...")
         while True:
             updates = self.api.get_updates(self.offset)
             
