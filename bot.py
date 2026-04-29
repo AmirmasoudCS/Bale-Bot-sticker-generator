@@ -68,7 +68,8 @@ class BaleAPI:
         files = {"sticker": ("sticker.webp", sticker_bytes, "image/webp")}
         data = {"chat_id": chat_id}
         try:
-            self.session.post(url, data=data, files=files, timeout=40)
+            resp = self.session.post(url,data=data,files=files,timeout=40)
+            print("Sticker upload response : ",resp.text)
         except Exception as e:
             print(f"⚠️ send_sticker error: {e}")
 
@@ -86,7 +87,7 @@ class StickerProcessor:
         canvas.paste(img, (x, y), img if img.mode == 'RGBA' else None)
         
         output = BytesIO()
-        canvas.save(output, format="WEBP")
+        canvas.save(output, format="WEBP",lossless=True,method=6)
         output.seek(0)
         return output.getvalue()
 
