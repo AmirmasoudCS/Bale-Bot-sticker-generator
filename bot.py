@@ -102,10 +102,22 @@ class StickerProcessor:
         img = cv2.imdecode(file_bytes,cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError("OpenCV failed to decode image. Possibly invalid image data.")
+        h,w = img.shape[:2]
+        scale = 800 / max(h,w) if max(h,w) > 800 else 1
+        img = cv2.resize(img,(int(w*scale),int(h*scale)))
         gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-        _, mask = cv2.threshold(gray,240,255,cv2.THRESH_BINARY_INV)
+        gray = cv2.GaussianBlur(gray,(5,5),0)
+        mask = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            11,
+            2
+        )
         kernel = np.ones((3,3),np.uint8)
-        mask = cv2.morphologyEx(mask,cv2.MORPH_OPEN,kernel)
+        mask = cv2.morphologyEx(mask,cv2.MORPH_CLOSE,kernel,iterations=2)
+        mask = cv2.GaussianBlur(mask,(3,3),0)
         b, g, r = cv2.split(img)
         rgba = cv2.merge([b,g,r,mask])
         img_rgba = Image.fromarray(cv2.cvtColor(rgba,cv2.COLOR_BGRA2RGBA))
